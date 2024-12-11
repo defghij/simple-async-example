@@ -1,4 +1,4 @@
-use mio::{net::TcpStream, Events, Interest, Poll, Registry, Token};
+use mio::{Events, Poll, Token};
 use std::{
     collections::HashMap,
     sync::{
@@ -19,7 +19,6 @@ pub fn reactor() -> &'static Reactor {
 
 pub struct Reactor {
     wakers: Wakers,
-    registry: Registry,
     next_id: AtomicUsize,
 }
 
@@ -37,7 +36,6 @@ impl Reactor {
         if let Some(waker) = wakers.get(&id) {
             waker.wake_by_ref();
         }
-
     }
 
     pub fn next_id(&self) -> usize {
@@ -69,11 +67,9 @@ pub fn start() {
     use thread::spawn;
     let wakers = Arc::new(Mutex::new(HashMap::new()));
     let poll = Poll::new().unwrap();
-    let registry = poll.registry().try_clone().unwrap();
     let next_id = AtomicUsize::new(1);
     let reactor = Reactor {
         wakers: wakers.clone(),
-        registry,
         next_id,
     };
 
