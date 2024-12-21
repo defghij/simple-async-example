@@ -1,8 +1,12 @@
 mod chores;
-mod runtime;
 
-use futures::future;
-
+use smol::{
+    LocalExecutor,
+};
+use futures_lite::{
+    stream,
+    prelude::*
+};
 
 
 
@@ -12,25 +16,17 @@ use futures::future;
 // Introduction to Async:
 //   https://jacko.io/async_intro.html
 fn main() {
-    let mut executor = runtime::init();
-    executor.block_on(async {
-        println!("Program starting");
+    let local_executor = LocalExecutor::new();
+    
+    let breakfast = chores::BreakfastFuture::new();
+    let laundry = chores::LaundryFuture::new();
 
-        //let mut breakfast = chores::Breakfast::new();
-        //breakfast.prepare();
-        //assert!(breakfast.is_made());
+    let futures = [breakfast, laundry];
 
-        //let mut laundry = chores::Laundry::new();
-        //laundry.undertake();
-        //assert!(laundry.is_done());
+    let mut tasks = vec![];
+    local_executor.spawn_many(futures,&mut tasks);
 
-        let breakfast = chores::BreakfastFuture::new();
-        let laundry = chores::LaundryFuture::new();
-        
-        //breakfast.await;
-        //laundry.await;
-
-        let chores = future::join(breakfast, laundry);
-        chores.await;
-    });
+    let result = local_executor.run(async move {
+        stream::iter(tasks).then(|x| x).collect::<Vec<_>>().await
+    }).await;
 }
