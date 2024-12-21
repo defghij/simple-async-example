@@ -4,8 +4,10 @@ use std::{
     rc::Rc,
     task::Poll, thread
 };
-use super::runtime::reactor;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
+use super::runtime::reactor;
 
 /// Very simple function to simulate being blocked on an external resource or task.
 /// It task two arguments: a task_name and a duration for the task.
@@ -85,7 +87,7 @@ enum BreakfastState {
 pub struct BreakfastFuture {
     task: BreakfastRef,
     state: BreakfastState,
-    waiting: bool,
+    waiting: Arc<AtomicBool>,
     id: usize,
 } 
 impl BreakfastFuture {
@@ -95,7 +97,7 @@ impl BreakfastFuture {
         BreakfastFuture {
             task: Rc::new(RefCell::new(Breakfast::new())),
             state: BreakfastState::Start,
-            waiting: false,
+            waiting: Arc::new(AtomicBool::new(true)),
             id, 
         }
     }
@@ -103,50 +105,68 @@ impl BreakfastFuture {
     fn schedule_wake(&mut self, cx: &mut std::task::Context<'_>, duration: Duration) {
         reactor().set_waker(cx, self.id);
         let id = self.id;
+        let mut waiting: Arc<AtomicBool> = self.waiting.clone();
         thread::spawn(move || {
             thread::sleep(duration);
+            waiting.store(false, Ordering::Relaxed);
             reactor().wake_by_id(id);
         });
-        self.waiting = true;
+        self.waiting.store(true, Ordering::Relaxed);
     }
 }
 impl Future for BreakfastFuture {
     type Output = ();
 
     fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        // NOTE: Need some way to toggle the internal state of the task to trigger state
-        // transition. That is, a way to tell the task is done.
+
         match self.state {
             BreakfastState::Start => { 
+                // Breakfast is being started.
                 println!("Starting Breakfast Tasks");
                 reactor().set_waker(cx, self.id);
 
+                // We begin by starting the Scrambled Eggs which take 2 seconds.
+                // This is essentially the state transition from Start -> ScrambleEgg
+                // which takes two seconds as timed by another thread.
                 self.state = BreakfastState::ScambleEgg;
                 self.schedule_wake(cx, Duration::from_secs(2));
                 Poll::Pending
             },
             BreakfastState::ScambleEgg => {
+                // We check to see if our Eggs are done. The amounts to
+                // waiting until our timer thread toggles self.waiting
+                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
+
+                // Once the Eggs are done, we set the appropriate state. Then
+                // begin the transition to the next state which is the toasting
+                // of bread. This state transition takes 1 second.
                 self.task.borrow_mut().eggs = true;
                 println!("Eggs ready");
                 self.state = BreakfastState::ToastBread;
-                self.schedule_wake(cx, Duration::from_secs(2));
+                self.schedule_wake(cx, Duration::from_secs(1));
                 Poll::Pending
             },
             BreakfastState::ToastBread => {
+                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
+
                 self.task.borrow_mut().toast = true;
                 println!("Toast ready");
                 self.state = BreakfastState::FrySausage;
-                self.schedule_wake(cx, Duration::from_secs(2));
+                self.schedule_wake(cx, Duration::from_secs(3));
                 Poll::Pending
             },
             BreakfastState::FrySausage => {
+                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
+
                 self.task.borrow_mut().sausage = true;
                 println!("Sauage ready");
                 self.state = BreakfastState::PourJuice;
-                self.schedule_wake(cx, Duration::from_secs(2));
+                self.schedule_wake(cx, Duration::from_secs(1));
                 Poll::Pending
             },
             BreakfastState::PourJuice => {
+                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
+
                 self.task.borrow_mut().orange_juice = true;
                 println!("Juice ready");
                 self.state = BreakfastState::Done;
@@ -227,7 +247,7 @@ enum LaundryState {
 pub struct LaundryFuture {
     task: LaundryRef,
     state: LaundryState,
-    waiting: bool,
+    waiting: Arc<AtomicBool>,
     id: usize,
 } 
 impl LaundryFuture {
@@ -237,7 +257,7 @@ impl LaundryFuture {
         LaundryFuture {
             task: Rc::new(RefCell::new(Laundry::new())),
             state: LaundryState::Start,
-            waiting: false,
+            waiting: Arc::new(AtomicBool::new(false)),
             id, 
         }
     }
@@ -245,11 +265,13 @@ impl LaundryFuture {
     fn schedule_wake(&mut self, cx: &mut std::task::Context<'_>, duration: Duration) {
         reactor().set_waker(cx, self.id);
         let id = self.id;
+        let mut waiting: Arc<AtomicBool> = self.waiting.clone();
         thread::spawn(move || {
             thread::sleep(duration);
+            waiting.store(false, Ordering::Relaxed);
             reactor().wake_by_id(id);
         });
-        self.waiting = true;
+        self.waiting.store(true, Ordering::Relaxed);
     }
 }
 impl Future for LaundryFuture {
@@ -257,7 +279,6 @@ impl Future for LaundryFuture {
 
     fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         if self.task.borrow().is_done() == false {
-            println!("Starting Laundry Tasks");
             reactor().set_waker(cx, self.id);
         }
         match self.state {
@@ -270,6 +291,8 @@ impl Future for LaundryFuture {
                 Poll::Pending
             },
             LaundryState::PickedUp => {
+                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
+                
                 self.task.borrow_mut().picked_up = true;
                 println!("Laundry picked up");
                 self.state = LaundryState::Washed;
@@ -277,6 +300,8 @@ impl Future for LaundryFuture {
                 Poll::Pending
             },
             LaundryState::Washed => {
+                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
+
                 self.task.borrow_mut().washed = true;
                 println!("Laundry washed");
                 self.state = LaundryState::Dried;
@@ -284,6 +309,8 @@ impl Future for LaundryFuture {
                 Poll::Pending
             },
             LaundryState::Dried => {
+                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
+
                 self.task.borrow_mut().dried = true;
                 println!("Laundry dried");
                 self.state = LaundryState::Folded;
@@ -291,6 +318,8 @@ impl Future for LaundryFuture {
                 Poll::Pending
             },
             LaundryState::Folded => {
+                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
+
                 self.task.borrow_mut().folded = true;
                 println!("Laundry folded");
                 self.state = LaundryState::PutAway;
@@ -298,6 +327,8 @@ impl Future for LaundryFuture {
                 Poll::Pending
             },
             LaundryState::PutAway => {
+                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
+
                 self.task.borrow_mut().put_away = true;
                 println!("Laundry put away");
                 self.state = LaundryState::Done;
@@ -305,7 +336,7 @@ impl Future for LaundryFuture {
                 Poll::Pending
             },
             LaundryState::Done => {
-                println!("Breakfast is ready!");
+                println!("Laundry is Done!");
                 return Poll::Ready(());
             },
         }

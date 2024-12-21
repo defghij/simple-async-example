@@ -1,6 +1,8 @@
 mod chores;
 mod runtime;
 
+use futures::future;
+
 
 
 
@@ -24,8 +26,11 @@ fn main() {
 
         let breakfast = chores::BreakfastFuture::new();
         let laundry = chores::LaundryFuture::new();
+        
+        //breakfast.await;
+        //laundry.await;
 
-        breakfast.await;
-        laundry.await;
+        let chores = future::join(breakfast, laundry);
+        chores.await;
     });
 }

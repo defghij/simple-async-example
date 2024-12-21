@@ -100,10 +100,10 @@ impl Executor {
             let name = thread::current().name().unwrap_or_default().to_string();
 
             if task_count > 0 {
-                println!("{name}: {task_count} pending tasks. Sleep until notified.");
+                //println!("{name}: {task_count} pending tasks. Sleep until notified.");
                 thread::park();
             } else {
-                println!("{name}: All tasks are finished");
+                //println!("{name}: All tasks are finished");
                 break;
             }
         }
