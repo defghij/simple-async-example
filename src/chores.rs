@@ -1,19 +1,19 @@
-use std::{
-    cell::RefCell,
-    future::Future,
-    rc::Rc,
-    task::Poll, thread
-};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+//use std::{
+//    cell::RefCell,
+//    future::Future,
+//    rc::Rc,
+//    task::Poll, thread
+//};
+//use std::sync::atomic::{AtomicBool, Ordering};
+//use std::sync::Arc;
 use std::time::Duration;
-use super::runtime::reactor;
+//use super::runtime::reactor;
 
 /// Very simple function to simulate being blocked on an external resource or task.
 /// It task two arguments: a task_name and a duration for the task.
 /// This function spawns a thread with a sleep. When the sleep finishes the task is 
 /// considered complete.
-pub fn run(task_name: &str, duration: Duration) {
+pub async fn run(task_name: &str, duration: Duration) {
     println!("Starting {task_name} (duration: {} s)", duration.as_secs());
 
     let task = std::thread::spawn(move || {
@@ -41,40 +41,41 @@ impl Breakfast {
         }
     }
 
-    pub fn prepare(&mut self) {
-        self.scamble_eggs();
-        self.toast_bread();
-        self.fry_sausage();
-        self.pour_orange_juice();
+    pub async fn prepare(&mut self) {
+        self.scamble_eggs().await;
+        self.toast_bread().await;
+        self.fry_sausage().await;
+        self.pour_orange_juice().await;
     }
 
     pub fn is_made(&self) -> bool {
         self.eggs && self.orange_juice && self.sausage && self.toast
     }
 
-    fn scamble_eggs(&mut self) {
-        run("breakfast.scramble_eggs", Duration::new(2,0));
+    async fn scamble_eggs(&mut self) {
+        run("breakfast.scramble_eggs", Duration::new(7,0)).await;
         self.eggs = true;
     }
 
-    fn toast_bread(&mut self) {
-        run("breakfast.toast_bread", Duration::new(1,0));
+    async fn toast_bread(&mut self) {
+        run("breakfast.toast_bread", Duration::new(2,0)).await;
         self.toast = true;
     }
 
-    fn fry_sausage(&mut self) {
-        run("breakfast.fry_sausage", Duration::new(3,0));
+    async fn fry_sausage(&mut self) {
+        run("breakfast.fry_sausage", Duration::new(10,0)).await;
         self.sausage = true;
     }
 
-    fn pour_orange_juice(&mut self) {
-        run("breakfast.pour_orange_juice", Duration::new(0,500_000));
+    async fn pour_orange_juice(&mut self) {
+        run("breakfast.pour_orange_juice", Duration::new(1,0)).await;
         self.orange_juice = true;
     }
 
 }
-type BreakfastRef = Rc<RefCell<Breakfast>>;
 
+/*
+type BreakfastRef = Rc<RefCell<Breakfast>>;
 enum BreakfastState {
     Start,
     ScambleEgg,
@@ -180,6 +181,7 @@ impl Future for BreakfastFuture {
         }
     }
 }
+*/
 
 
 pub struct Laundry {
@@ -200,41 +202,43 @@ impl Laundry {
         }
     }
 
-    pub fn undertake(&mut self) {
-        self.pickup();
-        self.wash();
-        self.dry();
-        self.fold();
-        self.put_away();
+    pub async fn undertake(&mut self) {
+        self.pickup().await;
+        self.wash().await;
+        self.dry().await;
+        self.fold().await;
+        self.put_away().await;
     }
 
     pub fn is_done(&self) -> bool {
            self.picked_up && self.washed && self.dried && self.folded && self.put_away       
     }
 
-    fn pickup(&mut self) {
-        run("laundry.pick up", Duration::new(0,500_000));
+    async fn pickup(&mut self) {
+        run("laundry.pick up", Duration::new(0,500_000)).await;
         self.picked_up = true;
     }
-    fn wash(&mut self) {
-        run("laundry.wash", Duration::new(2,0));
+    async fn wash(&mut self) {
+        run("laundry.wash", Duration::new(2,0)).await;
         self.washed = true;
     }
-    fn dry(&mut self) {
-        run("laundry.dry", Duration::new(3,0));
+    async fn dry(&mut self) {
+        run("laundry.dry", Duration::new(3,0)).await;
         self.dried = true;
     }
-    fn fold(&mut self) {
-        run("laundry.fold", Duration::new(1,0));
+    async fn fold(&mut self) {
+        run("laundry.fold", Duration::new(1,0)).await;
         self.folded = true;
     }
-    fn put_away(&mut self) {
-        run("laundry.put_away", Duration::new(1,0));
+    async fn put_away(&mut self) {
+        run("laundry.put_away", Duration::new(1,0)).await;
         self.put_away = true;
     }
 }
-type LaundryRef = Rc<RefCell<Laundry>>;
 
+/*
+ 
+type LaundryRef = Rc<RefCell<Laundry>>;
 enum LaundryState {
     Start,
     PickedUp,
@@ -342,3 +346,4 @@ impl Future for LaundryFuture {
         }
     }
 }
+*/
