@@ -7,37 +7,28 @@ use smol::{
 use futures_lite::prelude::*;
 
 
-//let my_stream = smol::stream::iter(vec![1u32, 2, 3]);
-//
-//// Spawn the set of futures on an executor.
-//let handles: Vec<smol::Task<()>> = my_stream
-//    .map(|item| {
-//        // Spawn the future on the executor.
-//        ex.spawn(do_something(item))
-//    }).collect().await;
-//
-//// Wait for all of the handles to complete.
-//for handle in handles {
-//    handle.await;
-//}
+/* Useful links:
+ *   https://jacko.io/async_intro.html
+ *   https://github.com/aochagavia/async-shenanigans/blob/9368b074c77fd9c3527c50388b054e5bda61597f/src/executor.rs
+ */
 
-
-
-// Look to this for an exampe:
-//   https://github.com/aochagavia/async-shenanigans/blob/9368b074c77fd9c3527c50388b054e5bda61597f/src/executor.rs
-//
-// Introduction to Async:
-//   https://jacko.io/async_intro.html
 fn main() {
-    let _completed = smol::block_on(async {
+    println!("Going to start the chores");
+
+    // Need to block on `do_the_chores` or main will exit before they finish.
+    let completed = smol::block_on(async {
         do_the_chores().await
     });
+
+    println!("All chores completed {:?}", completed);
 
 }
 
 async fn do_the_chores() -> Vec<bool> {
+    // Create a single-threaded executor. There is no _parallelism_ here-- just concurrency.
     let local_executor = LocalExecutor::new();
 
+    // This does _not_ run the chore, merely defines it as a task to be awaited on later.
     let breakfast: Task<bool> = smol::spawn(async {
        let mut breakfast = chores::Breakfast::new(); 
        breakfast.prepare().await;
@@ -50,14 +41,21 @@ async fn do_the_chores() -> Vec<bool> {
        laundry.is_done()
     });
 
-    // Spawn all of the futures onto the executor at once.
-    let futures = [breakfast, laundry];
-    let mut tasks = vec![];
-    local_executor.spawn_many(futures, &mut tasks);
+    let around_the_house: Task<bool> = smol::spawn(async {
+       let mut around_the_house = chores::AroundTheHouse::new();
+       around_the_house.conduct().await;
+       around_the_house.is_finished()
+    });
+
+    // Spawn all of the futures (chores) onto the executor at once.
+    let futures = [breakfast, laundry, around_the_house];
+    let mut chores = vec![];
+    local_executor.spawn_many(futures, &mut chores);
 
     // Await all of them.
-    let results = local_executor.run(async move {
-        smol::stream::iter(tasks).then(|x| x).collect::<Vec<_>>().await
+    let results: Vec<bool> = local_executor.run( async move {
+        smol::stream::iter(chores).then(|chore| chore).collect::<Vec<_>>().await
     }).await;
+
     results
 }

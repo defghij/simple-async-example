@@ -7,24 +7,45 @@
 //use std::sync::atomic::{AtomicBool, Ordering};
 //use std::sync::Arc;
 use std::time::Duration;
+use async_io::Timer;
+
 //use super::runtime::reactor;
+
+/* This file contains four chores ("tasks"): Breakfast, Laundry, AroundTheHouse, and Trash.
+ * Breakfast and Laundry and independent of the other chores.
+ * Each of the tasks demonstrates a different thing:
+ *     - Breakfast simply using the `async` keyword
+ *     - AroundTheHouse depends on Trasn to demonstrate a simple nesting of async tasks 
+ *     - Laundry implements its own Future.
+ *
+ *
+ * Each chore is implemented as their own structure though they share the same form. The fields of
+ * the structure are boolean values indicating whether the sub-task has finished. There are three
+ * associated functions the construct, start, and then return the status of the chore. 
+ *
+ * There are also async function for completing each sub-task. The sub-tasks make use of a non-blocking
+ * timer. This is to simulate time in which the task yields to the operating system or device for
+ * some task.
+ *
+ */
+
 
 /// Very simple function to simulate being blocked on an external resource or task.
 /// It task two arguments: a task_name and a duration for the task.
 /// This function spawns a thread with a sleep. When the sleep finishes the task is 
 /// considered complete.
 pub async fn run(task_name: &str, duration: Duration) {
-    println!("Starting {task_name} (duration: {} s)", duration.as_secs());
+    println!("{task_name}, started");
 
-    let task = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(duration.as_secs()));
-        });
+    //let task = std::thread::spawn(move || {
+            //std::thread::sleep(std::time::Duration::from_secs(duration.as_secs()));
+        //});
+    Timer::after(duration).await;
 
-    let _ = task.join();
-
-    println!("Finished {task_name}");
+    println!("{task_name}, finished ({}s)", duration.as_secs());
 }
 
+/// Collection of chores that represent preparing breakfast. 
 pub struct Breakfast {
     eggs: bool,
     toast: bool,
@@ -41,6 +62,7 @@ impl Breakfast {
         }
     }
 
+    /// The order in which we prepare breakfast.
     pub async fn prepare(&mut self) {
         self.scamble_eggs().await;
         self.toast_bread().await;
@@ -48,141 +70,32 @@ impl Breakfast {
         self.pour_orange_juice().await;
     }
 
+    /// This is the result of the chore-- we return a boolean indicating we've finished.
     pub fn is_made(&self) -> bool {
         self.eggs && self.orange_juice && self.sausage && self.toast
     }
 
     async fn scamble_eggs(&mut self) {
-        run("breakfast.scramble_eggs", Duration::new(7,0)).await;
+        run("[task 1.a] breakfast.scramble_eggs", Duration::new(3,0)).await;
         self.eggs = true;
     }
 
     async fn toast_bread(&mut self) {
-        run("breakfast.toast_bread", Duration::new(2,0)).await;
+        run("[task 1.b] breakfast.toast_bread", Duration::new(1,0)).await;
         self.toast = true;
     }
 
     async fn fry_sausage(&mut self) {
-        run("breakfast.fry_sausage", Duration::new(10,0)).await;
+        run("[task 1.c] breakfast.fry_sausage", Duration::new(6,0)).await;
         self.sausage = true;
     }
 
     async fn pour_orange_juice(&mut self) {
-        run("breakfast.pour_orange_juice", Duration::new(1,0)).await;
+        run("[task 1.d] breakfast.pour_orange_juice", Duration::new(1,0)).await;
         self.orange_juice = true;
     }
 
 }
-
-/*
-type BreakfastRef = Rc<RefCell<Breakfast>>;
-enum BreakfastState {
-    Start,
-    ScambleEgg,
-    ToastBread,
-    FrySausage,
-    PourJuice,
-    Done
-}
-
-pub struct BreakfastFuture {
-    task: BreakfastRef,
-    state: BreakfastState,
-    waiting: Arc<AtomicBool>,
-    id: usize,
-} 
-impl BreakfastFuture {
-    pub fn new() -> BreakfastFuture { 
-        let id = reactor().next_id();
-        println!("Breakfast TaskID:{id}");
-        BreakfastFuture {
-            task: Rc::new(RefCell::new(Breakfast::new())),
-            state: BreakfastState::Start,
-            waiting: Arc::new(AtomicBool::new(true)),
-            id, 
-        }
-    }
-
-    fn schedule_wake(&mut self, cx: &mut std::task::Context<'_>, duration: Duration) {
-        reactor().set_waker(cx, self.id);
-        let id = self.id;
-        let mut waiting: Arc<AtomicBool> = self.waiting.clone();
-        thread::spawn(move || {
-            thread::sleep(duration);
-            waiting.store(false, Ordering::Relaxed);
-            reactor().wake_by_id(id);
-        });
-        self.waiting.store(true, Ordering::Relaxed);
-    }
-}
-impl Future for BreakfastFuture {
-    type Output = ();
-
-    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-
-        match self.state {
-            BreakfastState::Start => { 
-                // Breakfast is being started.
-                println!("Starting Breakfast Tasks");
-                reactor().set_waker(cx, self.id);
-
-                // We begin by starting the Scrambled Eggs which take 2 seconds.
-                // This is essentially the state transition from Start -> ScrambleEgg
-                // which takes two seconds as timed by another thread.
-                self.state = BreakfastState::ScambleEgg;
-                self.schedule_wake(cx, Duration::from_secs(2));
-                Poll::Pending
-            },
-            BreakfastState::ScambleEgg => {
-                // We check to see if our Eggs are done. The amounts to
-                // waiting until our timer thread toggles self.waiting
-                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
-
-                // Once the Eggs are done, we set the appropriate state. Then
-                // begin the transition to the next state which is the toasting
-                // of bread. This state transition takes 1 second.
-                self.task.borrow_mut().eggs = true;
-                println!("Eggs ready");
-                self.state = BreakfastState::ToastBread;
-                self.schedule_wake(cx, Duration::from_secs(1));
-                Poll::Pending
-            },
-            BreakfastState::ToastBread => {
-                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
-
-                self.task.borrow_mut().toast = true;
-                println!("Toast ready");
-                self.state = BreakfastState::FrySausage;
-                self.schedule_wake(cx, Duration::from_secs(3));
-                Poll::Pending
-            },
-            BreakfastState::FrySausage => {
-                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
-
-                self.task.borrow_mut().sausage = true;
-                println!("Sauage ready");
-                self.state = BreakfastState::PourJuice;
-                self.schedule_wake(cx, Duration::from_secs(1));
-                Poll::Pending
-            },
-            BreakfastState::PourJuice => {
-                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
-
-                self.task.borrow_mut().orange_juice = true;
-                println!("Juice ready");
-                self.state = BreakfastState::Done;
-                self.schedule_wake(cx, Duration::from_secs(2));
-                Poll::Pending
-            },
-            BreakfastState::Done => {
-                println!("Breakfast is ready!");
-                return Poll::Ready(());
-            },
-        }
-    }
-}
-*/
-
 
 pub struct Laundry {
     picked_up: bool,
@@ -215,135 +128,99 @@ impl Laundry {
     }
 
     async fn pickup(&mut self) {
-        run("laundry.pick up", Duration::new(0,500_000)).await;
+        run("[task 2.a] laundry.pick up", Duration::new(1,0)).await;
         self.picked_up = true;
     }
+
     async fn wash(&mut self) {
-        run("laundry.wash", Duration::new(2,0)).await;
+        run("[task 2.b] laundry.wash", Duration::new(6,0)).await;
         self.washed = true;
     }
+
     async fn dry(&mut self) {
-        run("laundry.dry", Duration::new(3,0)).await;
+        run("[task 2.c] laundry.dry", Duration::new(4,0)).await;
         self.dried = true;
     }
+
     async fn fold(&mut self) {
-        run("laundry.fold", Duration::new(1,0)).await;
+        run("[task 2.d] laundry.fold", Duration::new(4,0)).await;
         self.folded = true;
     }
+
     async fn put_away(&mut self) {
-        run("laundry.put_away", Duration::new(1,0)).await;
+        run("[task 2.e] laundry.put_away", Duration::new(2,0)).await;
         self.put_away = true;
     }
 }
 
-/*
- 
-type LaundryRef = Rc<RefCell<Laundry>>;
-enum LaundryState {
-    Start,
-    PickedUp,
-    Washed,
-    Dried,
-    Folded,
-    PutAway,
-    Done
+/// Collection of chores from around the house-- take out the trash and water plants. Taking out
+/// the trash is a multi-step sub-task. See the `take_out_trash` function.
+pub struct AroundTheHouse {
+    trash_taken_out: bool,
+    plants_watered: bool
 }
-pub struct LaundryFuture {
-    task: LaundryRef,
-    state: LaundryState,
-    waiting: Arc<AtomicBool>,
-    id: usize,
-} 
-impl LaundryFuture {
-    pub fn new() -> LaundryFuture { 
-        let id = reactor().next_id();
-        println!("Laundry TaskID:{id}");
-        LaundryFuture {
-            task: Rc::new(RefCell::new(Laundry::new())),
-            state: LaundryState::Start,
-            waiting: Arc::new(AtomicBool::new(false)),
-            id, 
+impl AroundTheHouse {
+    pub fn new() -> AroundTheHouse {
+        AroundTheHouse {
+            trash_taken_out: false,
+            plants_watered: false
         }
     }
 
-    fn schedule_wake(&mut self, cx: &mut std::task::Context<'_>, duration: Duration) {
-        reactor().set_waker(cx, self.id);
-        let id = self.id;
-        let mut waiting: Arc<AtomicBool> = self.waiting.clone();
-        thread::spawn(move || {
-            thread::sleep(duration);
-            waiting.store(false, Ordering::Relaxed);
-            reactor().wake_by_id(id);
-        });
-        self.waiting.store(true, Ordering::Relaxed);
+    pub async fn conduct(&mut self) { 
+        self.take_out_trash().await;
+        self.water_plants().await;
+    }
+
+    pub fn is_finished(&self) -> bool {
+           self.trash_taken_out && self.plants_watered
+    }
+
+    /// Utilize the Trash chore. Note that the duration is 0 because the Trash chore has its own
+    /// sub-task duration.
+    async fn take_out_trash(&mut self) {
+        let mut trash = Trash::new(); 
+        run("[task 3.a] around-the-house.trash", Duration::new(0,0)).await;
+        self.trash_taken_out = trash.conduct().await
+    }
+
+    async fn water_plants(&mut self) { 
+        run("[task 3.b] around-the-house.plants", Duration::new(3,0)).await;
+        self.plants_watered = true;
     }
 }
-impl Future for LaundryFuture {
-    type Output = ();
 
-    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        if self.task.borrow().is_done() == false {
-            reactor().set_waker(cx, self.id);
-        }
-        match self.state {
-            LaundryState::Start => { 
-                println!("Starting Laundry Tasks");
-                reactor().set_waker(cx, self.id);
-
-                self.state = LaundryState::PickedUp;
-                self.schedule_wake(cx, Duration::from_secs(2));
-                Poll::Pending
-            },
-            LaundryState::PickedUp => {
-                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
-                
-                self.task.borrow_mut().picked_up = true;
-                println!("Laundry picked up");
-                self.state = LaundryState::Washed;
-                self.schedule_wake(cx, Duration::from_secs(2));
-                Poll::Pending
-            },
-            LaundryState::Washed => {
-                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
-
-                self.task.borrow_mut().washed = true;
-                println!("Laundry washed");
-                self.state = LaundryState::Dried;
-                self.schedule_wake(cx, Duration::from_secs(2));
-                Poll::Pending
-            },
-            LaundryState::Dried => {
-                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
-
-                self.task.borrow_mut().dried = true;
-                println!("Laundry dried");
-                self.state = LaundryState::Folded;
-                self.schedule_wake(cx, Duration::from_secs(2));
-                Poll::Pending
-            },
-            LaundryState::Folded => {
-                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
-
-                self.task.borrow_mut().folded = true;
-                println!("Laundry folded");
-                self.state = LaundryState::PutAway;
-                self.schedule_wake(cx, Duration::from_secs(2));
-                Poll::Pending
-            },
-            LaundryState::PutAway => {
-                if self.waiting.load(Ordering::Relaxed) { return Poll::Pending; }
-
-                self.task.borrow_mut().put_away = true;
-                println!("Laundry put away");
-                self.state = LaundryState::Done;
-                self.schedule_wake(cx, Duration::from_secs(1));
-                Poll::Pending
-            },
-            LaundryState::Done => {
-                println!("Laundry is Done!");
-                return Poll::Ready(());
-            },
+/// A structure to denote the task of doing the Trash chore. Sub-tasks are gathering up the trash
+/// and then taking it out. 
+pub struct Trash {
+    gathered: bool,
+    taken_out: bool
+}
+impl Trash {
+    pub fn new() -> Trash {
+        Trash {
+            gathered: false,
+            taken_out: false,
         }
     }
+
+    pub async fn conduct(&mut self) -> bool { 
+        self.gather().await;
+        self.take_out().await;
+        self.is_complete()
+    }
+
+    fn is_complete(&self) -> bool {
+           self.gathered && self.taken_out
+    }
+
+    async fn gather(&mut self) {
+        run("[task 4.a] trash.gather", Duration::new(3,0)).await;
+        self.gathered = true;
+    }
+
+    async fn take_out(&mut self) {
+        run("[task 4.b] trash.take_out", Duration::new(3,0)).await;
+        self.taken_out = true;
+    }
 }
-*/
