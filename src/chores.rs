@@ -6,7 +6,7 @@
 //};
 //use std::sync::atomic::{AtomicBool, Ordering};
 //use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::{Arc, Mutex}, time::Duration};
 use async_io::Timer;
 
 //use super::runtime::reactor;
@@ -222,5 +222,47 @@ impl Trash {
     async fn take_out(&mut self) {
         run("[task 4.b] trash.take_out", Duration::new(3,0)).await;
         self.taken_out = true;
+    }
+}
+
+enum TrashState {
+    Start,
+    Gather(Duration),
+    TakeOut(Duration),
+    Done
+}
+
+pub struct TrashFuture {
+    state: Arc<TrashState>,
+    waker: Timer,
+}
+
+impl futures::Future for TrashFuture {
+    type Output = bool;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        let mut state = self.state.as_ref();
+        match state {
+            TrashState::Start => {
+                println!("[Task 4.a] trash.start");
+
+                state = &TrashState::Gather(Duration::from_secs(2)); // Set transition to next state.
+                std::task::Poll::Pending
+            },
+            TrashState::Gather(duration) => {
+
+                //run("[task 4.a] trash.gather", *duration);
+                state = &TrashState::TakeOut(Duration::from_secs(4)); // Set transition to next state.
+                std::task::Poll::Pending
+            },
+            TrashState::TakeOut(duration) => {
+
+                //run("[task 4.b] trash.take_out", *duration);
+                std::task::Poll::Pending
+            },
+            TrashState::Done => {
+                std::task::Poll::Ready(true)
+            }
+        }
     }
 }
