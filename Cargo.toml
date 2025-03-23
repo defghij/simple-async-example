@@ -12,6 +12,7 @@ futures-lite = { version = "2.5.0" }
 mio = { version = "0.8", features = ["net", "os-poll"] }
 tokio = { version = "1.35", features = ["full"] }
 futures = { version = "0.3.31" }
+clap = "4.4.6"
 
 [profile.profiling]
 inherits = "release"
