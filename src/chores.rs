@@ -1,5 +1,6 @@
 use std::{pin::Pin, time::Duration};
 use async_io::Timer;
+use tracing;
 
 /* This file contains four chores ("tasks"): Breakfast, Laundry, AroundTheHouse, and Trash.
  * Breakfast and Laundry and independent of the other chores.
@@ -43,15 +44,13 @@ pub trait Choreable {
     /// The return value (always true) is to mimic some return value of a real non-blocking
     /// function that an async task might invoke.
     async fn run(task_name: &str, duration: Duration) -> bool {
-        println!("{task_name}, started");
+        tracing::info!("{}, started", task_name);
 
         //let task = std::thread::spawn(move || {
                 //std::thread::sleep(std::time::Duration::from_secs(duration.as_secs()));
             //});
         Timer::after(duration).await;
-
-        println!("{task_name}, finished ({}s)", duration.as_secs());
-
+        tracing::info!("{}, finished ({}s)", task_name, duration.as_secs());
         true
     }
 }
@@ -107,6 +106,7 @@ pub mod simple {
     use super::*;
 
     /// Collection of chores that represent preparing breakfast. 
+    #[derive(Debug)]
     pub struct Breakfast {
         eggs: bool,
         toast: bool,
@@ -114,21 +114,26 @@ pub mod simple {
         orange_juice: bool,
     } 
     impl Breakfast {
+
+        #[tracing::instrument(level = "debug")]
         async fn scamble_eggs(&mut self) {
             self.eggs =
                 <Breakfast as Choreable>::run("[task 1.a] breakfast.scramble_eggs", Duration::new(3,0)).await;
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn toast_bread(&mut self) {
             self.toast = 
                 <Breakfast as Choreable>::run("[task 1.b] breakfast.toast_bread", Duration::new(1,0)).await;
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn fry_sausage(&mut self) {
             self.sausage = 
                 <Breakfast as Choreable>::run("[task 1.c] breakfast.fry_sausage", Duration::new(6,0)).await;
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn pour_orange_juice(&mut self) {
             self.orange_juice =
                 <Breakfast as Choreable>::run("[task 1.d] breakfast.pour_orange_juice", Duration::new(1,0)).await;
@@ -146,6 +151,7 @@ pub mod simple {
             }
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn start(&mut self) -> bool {
             self.scamble_eggs().await;
             self.toast_bread().await;
@@ -155,6 +161,7 @@ pub mod simple {
         }
     }
 
+    #[derive(Debug)]
     pub struct Laundry {
         picked_up: bool,
         washed: bool,
@@ -163,26 +170,31 @@ pub mod simple {
         put_away: bool,
     }
     impl Laundry {
+        #[tracing::instrument(level = "debug")]
         async fn pickup(&mut self) {
             self.picked_up = 
                 <Laundry as Choreable>::run("[task 2.a] laundry.pick up", Duration::new(1,0)).await;
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn wash(&mut self) {
             <Laundry as Choreable>::run("[task 2.b] laundry.wash", Duration::new(6,0)).await;
             self.washed = true;
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn dry(&mut self) {
             <Laundry as Choreable>::run("[task 2.c] laundry.dry", Duration::new(4,0)).await;
             self.dried = true;
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn fold(&mut self) {
             <Laundry as Choreable>::run("[task 2.d] laundry.fold", Duration::new(4,0)).await;
             self.folded = true;
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn put_away(&mut self) {
             <Laundry as Choreable>::run("[task 2.e] laundry.put_away", Duration::new(2,0)).await;
             self.put_away = true;
@@ -200,6 +212,7 @@ pub mod simple {
             }
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn start(&mut self) -> bool {
             self.pickup().await;
             self.wash().await;
@@ -229,16 +242,19 @@ pub mod intermediate {
 
     /// Collection of chores from around the house-- take out the trash and water plants. Taking out
     /// the trash is a multi-step sub-task. See the `take_out_trash` function.
+    #[derive(Debug)]
     pub struct AroundTheHouse {
         trash_taken_out: bool,
         plants_watered: bool
     }
     impl AroundTheHouse {
+        #[tracing::instrument(level = "debug")]
         async fn take_out_trash(&mut self) {
             let trash = trash::Future::new();
             self.trash_taken_out = trash.await
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn water_plants(&mut self) { 
             self.plants_watered = 
                 <AroundTheHouse as Choreable>::run("[task 3.b] around-the-house.plants", Duration::new(3,0)).await;
@@ -254,6 +270,7 @@ pub mod intermediate {
             }
         }
 
+        #[tracing::instrument(level = "debug")]
         async fn start(&mut self) -> bool {
             self.take_out_trash().await;
             self.water_plants().await;
