@@ -1,9 +1,4 @@
-mod chores;
-use chores::{
-    Choreable,
-    simple::{Breakfast, Laundry},
-    intermediate::AroundTheHouse
-};
+use std::env;
 
 use smol::{
     Task,
@@ -11,11 +6,19 @@ use smol::{
 };
 use futures_lite::prelude::*;
 
+use dotenv::dotenv;
 use clap::{
     Arg, 
     ArgAction,
     ArgMatches,
     Command,
+};
+
+mod chores;
+use chores::{
+    Choreable,
+    simple::{Breakfast, Laundry},
+    intermediate::AroundTheHouse
 };
 
 
@@ -51,23 +54,31 @@ use clap::{
  *      - https://cliffle.com/blog/async-inversion/
  */
 fn main() {
-    let args = get_arguments();
-    setup_tracing();
-    
+    // Do _all_ of the initial setup for the application.
+    let args: ArgMatches = initialize_application();
+
+    // Get the kinds of tasks we want to do from
+    // the commandline arguments.
+    let task_kinds: (bool, bool, bool) = (
+        *args.get_one::<bool>("first").expect("Argparse should guarantee a bool"),
+        *args.get_one::<bool>("second").expect("Argparse should guarantee a bool"),
+        *args.get_one::<bool>("third").expect("Argparse should guarantee a bool"),
+    );
+
     // Need to block on `do_the_chores` or main will exit before they finish.
     let _completed = smol::block_on(async {
-        do_the_chores(args).await
+        do_the_chores(task_kinds).await
     });
 }
 
-async fn do_the_chores(args: ArgMatches) -> Vec<bool> {
+async fn do_the_chores(task_kinds: (bool, bool, bool)) -> Vec<bool> {
     // Create a single-threaded executor. There is no _parallelism_ here-- just concurrency.
     let local_executor = LocalExecutor::new();
     let mut futures = Vec::new(); //[breakfast, laundry, around_the_house];
     let mut results: Vec<bool> = Vec::new();
     let mut chores = vec![];
 
-    if *args.get_one("first").unwrap() { 
+    if task_kinds.0 { 
         tracing::info!("setting up simple tasks");
         // This does _not_ run the chore, merely defines it as a task to be awaited on later.
         let breakfast: Task<bool> = smol::spawn(async {
@@ -85,7 +96,7 @@ async fn do_the_chores(args: ArgMatches) -> Vec<bool> {
         results.push(false);
     }
 
-    if *args.get_one("second").unwrap() { 
+    if task_kinds.1 { 
         tracing::info!("setting up intermediate tasks");
         let around_the_house: Task<bool> = smol::spawn(async {
             // This task is in the advanced module because it nests an Async Task within
@@ -97,7 +108,7 @@ async fn do_the_chores(args: ArgMatches) -> Vec<bool> {
         results.push(false);
     }
 
-    if *args.get_one("third").unwrap() { 
+    if task_kinds.2 { 
         todo!("no advanced asnync tasks to demonstrate");
     }
 
@@ -148,19 +159,32 @@ fn get_arguments() -> ArgMatches {
     args
 }
 
-fn setup_tracing() {
+fn setup_tracing(level: tracing::Level) {
     // construct a subscriber that prints formatted traces to stdout
     let subscriber = tracing_subscriber::fmt()
-        // Use a more compact, abbreviated log format
         .compact()
-        // Display source code line numbers
         .with_line_number(true)
-        // Display the thread ID an event was recorded on
         .with_thread_ids(true)
-        .with_max_level(tracing::Level::INFO)
-        // Build the subscriber
+        .with_max_level(level)
         .finish();
 
     // use that subscriber to process traces emitted after this point
     tracing::subscriber::set_global_default(subscriber).expect("Subscriber setup should succeed");
+}
+
+fn initialize_application() -> ArgMatches {
+    // Do this first... for reasons(?).
+    let args = get_arguments();
+
+    // Read in a `.env` file, if it exists, and add it to
+    // the application's `env`.
+    dotenv().ok();
+   
+    // Get verbosity level for application
+    let verbosity = env::var("VERBOSITY").unwrap_or("INFO".to_string());
+    let level = verbosity.parse::<tracing::Level>().unwrap_or(tracing::Level::INFO);
+    
+    setup_tracing(level);
+
+    args
 }
