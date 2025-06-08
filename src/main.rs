@@ -176,8 +176,8 @@ fn initialize_application() -> ArgMatches {
     // Do this first... for reasons(?).
     let args = get_arguments();
 
-    // Read in a `.env` file, if it exists, and add it to
-    // the application's `env`.
+    // Read in a `.env` file in the current directory, if it exists, and add the
+    // `KEY=VALUE` entries to the application's `env`.
     dotenv().ok();
    
     // Get verbosity level for application
